@@ -1854,9 +1854,30 @@ fbq('track', 'PageView');
 let ytMusicPlaying = false;
 let isYT = false;
 let isMusicOpened = false;
+let audioCtxUnlocked = false;
 
 function getSong() {
   return document.getElementById("song");
+}
+
+// iOS AudioContext unlocker - bangunkan hardware audio WebKit iOS
+function unlockIOSAudio() {
+  if (audioCtxUnlocked) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start(0);
+    }
+  } catch(e) {}
+  audioCtxUnlocked = true;
 }
 
 function updateAudioUI(isPlaying) {
@@ -1884,9 +1905,12 @@ function updateAudioUI(isPlaying) {
 }
 
 function _playAudio() {
+  unlockIOSAudio();
   const song = getSong();
   if (!song) return;
   song.muted = false;
+  
+  // Panggil play secara sinkron langsung dalam gesture pengguna
   const playPromise = song.play();
   if (playPromise !== undefined) {
     playPromise.then(() => {
@@ -1895,7 +1919,7 @@ function _playAudio() {
         if (song.currentTime < 1) song.currentTime = 45;
       } catch(e) {}
     }).catch(err => {
-      console.warn("Autoplay was prevented by browser:", err);
+      console.warn("Autoplay playback notice:", err);
     });
   }
 }
@@ -1909,6 +1933,7 @@ function _pauseAudio() {
 }
 
 function _toggleAudio() {
+  unlockIOSAudio();
   const song = getSong();
   if (song && !song.paused) {
     _pauseAudio();
@@ -1927,17 +1952,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll(sel).forEach(el => {
       el.style.cursor = 'pointer';
       el.onclick = function(e) {
-        e.preventDefault();
+        if (e) e.stopPropagation();
         _toggleAudio();
       };
       el.ontouchend = function(e) {
-        e.preventDefault();
+        if (e) e.stopPropagation();
         _toggleAudio();
       };
     });
   });
 
-  // Try immediate autoplay if supported (e.g. Android WebView / allowed environments)
+  // Coba autoplay langsung jika didukung lingkungan browser
   const song = getSong();
   if (song) {
     song.play().then(() => {
@@ -1963,16 +1988,21 @@ function showAllSect(){
   }
 }
 
+let openingTriggered = false;
 function bukaUndanganAction(e) {
   if (e) {
-    try { e.preventDefault(); } catch(err) {}
+    try { e.stopPropagation(); } catch(err) {}
   }
-  isMusicOpened = true;
-  enableScroll();
+  unlockIOSAudio();
   _playAudio();
   
+  if (openingTriggered) return;
+  openingTriggered = true;
+  isMusicOpened = true;
+  enableScroll();
+  
   if (window.jQuery) {
-    jQuery("#cover").animate({ opacity: 0, top: "-100%" }, 1500, function() {
+    jQuery("#cover").animate({ opacity: 0, top: "-100%" }, 1200, function() {
       jQuery("#cover").hide();
       try {
         var v = document.querySelector('.elementor-background-video-container video');
@@ -1982,37 +2012,38 @@ function bukaUndanganAction(e) {
   } else {
     var cov = document.getElementById("cover");
     if (cov) {
-      cov.style.transition = "opacity 1.5s, top 1.5s";
+      cov.style.transition = "opacity 1.2s, top 1.2s";
       cov.style.opacity = "0";
       cov.style.top = "-100%";
-      setTimeout(function() { cov.style.display = "none"; }, 1500);
+      setTimeout(function() { cov.style.display = "none"; }, 1200);
     }
   }
   showAllSect();
 }
 
-// Attach opening handler to tombolbuka and its children
+// Pasang handler buka undangan pada tombolbuka
 const btnBuka = document.getElementById("tombolbuka");
 if (btnBuka) {
   btnBuka.style.cursor = "pointer";
   btnBuka.addEventListener('click', bukaUndanganAction);
   btnBuka.addEventListener('touchend', bukaUndanganAction);
-  btnBuka.querySelectorAll('a, button, .elementor-button, span').forEach(child => {
-    child.style.cursor = "pointer";
-    child.addEventListener('click', bukaUndanganAction);
-    child.addEventListener('touchend', bukaUndanganAction);
-  });
+  const linkBtn = btnBuka.querySelector('a.elementor-button, button, a');
+  if (linkBtn) {
+    linkBtn.style.cursor = "pointer";
+    linkBtn.addEventListener('click', bukaUndanganAction);
+    linkBtn.addEventListener('touchend', bukaUndanganAction);
+  }
 }
 
 // Universal interaction unlock for mobile Safari / iOS / all devices
-const mobileUnlockList = ['touchstart', 'touchend', 'click', 'scroll'];
 function handleMobileUnlock() {
+  unlockIOSAudio();
   const song = getSong();
   if (song && song.paused && isMusicOpened) {
     _playAudio();
   }
 }
-mobileUnlockList.forEach(evt => {
+['touchstart', 'touchend', 'click'].forEach(evt => {
   document.addEventListener(evt, handleMobileUnlock, { passive: true });
 });
 
@@ -2751,8 +2782,9 @@ var WdsAudio = {"source":"url","audio_link":"pernikahankita.mp3","audio_start":4
 			</div>
 
 			<div id="wds-audio-box" style="position:fixed;bottom:0;left:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;">
-				<audio id="song" src="pernikahankita.mp3" preload="auto" playsinline webkit-playsinline loop>
-					<source src="pernikahankita.mp3" type="audio/mp3">
+				<audio id="song" preload="auto" playsinline webkit-playsinline x-webkit-airplay="allow" loop>
+					<source src="pernikahankita.m4a" type="audio/mp4">
+					<source src="pernikahankita.mp3" type="audio/mpeg">
 				</audio>
 			</div>
 
